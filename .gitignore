@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 环境
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 输出文件（保留示例图片）
+outputs/*.png
+!outputs/prediction_vs_truth.png
+!outputs/heatsink_optimization_gpu.png
+
+# 模型文件
+*.pth
+*.pt
