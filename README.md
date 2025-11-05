@@ -1,242 +1,260 @@
-# 散热器设计优化：基于神经算子的工程应用 (GPU 加速版)
+# Heatsink Design Optimization: Neural Operator Engineering Application (GPU Accelerated)
 
-## 📖 项目概述
+**English** | [中文文档](./README_CN.md)
 
-PhysicsAI算例：本项目展示了使用**傅里叶神经算子 (Fourier Neural Operator, FNO)** 解决工程优化问题，实现从少量设计参数到高维物理场的快速预测。
+## 📖 Project Overview
 
-### 核心创新点
+**PhysicsAI Example**: This project demonstrates how to use **Fourier Neural Operator (FNO)** to solve engineering optimization problems, enabling fast prediction from a few design parameters to high-dimensional physical fields.
 
-- ✅ **工程导向**：工程上常用的设计参数 → 性能场直接映射方法
-- ✅ **信息放大**：用 4 个参数预测 4096 个温度值（信息比 1:1024）
-- ✅ **GPU 加速**：10000 个设计方案评估仅需 30 秒，传统 CFD 需要数月
-- ✅ **实时优化**：可用于交互式设计优化
+### Key Innovations
 
-### 主要功能：
+- ✅ **Engineering-Oriented**: Direct mapping from design parameters to performance fields, commonly used in engineering
+- ✅ **Information Amplification**: Predict 4096 temperature values from 4 parameters (information ratio 1:1024)
+- ✅ **GPU Acceleration**: Evaluate 10,000 design proposals in 30 seconds, vs. months with traditional CFD
+- ✅ **Real-time Optimization**: Suitable for interactive design optimization
 
-    输入:散热器设计参数：[fin_height, fin_spacing, thermal_cond, heat_power]
-    输出: 64×64 温度场
+### Main Features
 
-### 计算示例效果：
+    Input: Heatsink design parameters [fin_height, fin_spacing, thermal_cond, heat_power]
+    Output: 64×64 temperature field
 
-![散热器优化结果](./outputs/heatsink_optimization_gpu.png)
+### Example Results
 
-![预测对比](./outputs/prediction_vs_truth.png)
+![Heatsink Optimization Results](./outputs/heatsink_optimization_gpu.png)
 
----
-
-## 🔬 核心原理：为什么 4 个参数能预测 4096 个数？
-
-### 信息的真正来源：模型权重
-
-```
-输入：4个设计参数
-模型：18,138,625个神经网络参数 ← 信息存储在这里！
-输出：64×64 = 4096个温度值
-
-真实信息流 = 4个输入 + 1800万个学习到的权重 → 4096个输出
-```
-
-### 训练阶段：学习物理规律
-
-```
-400个训练样本（4参数 → 4096温度值）
-        ↓
-   反向传播优化
-        ↓
-18M个权重中编码了：
-  • 热传导方程 ∇²T = -Q/k 的求解规律
-  • 边界条件如何影响温度分布
-  • 热量的空间传播模式
-  • 参数到场的映射关系
-```
-
-### 推理阶段：应用学到的规律
-
-```
-4个新参数 → 通过18M学习到的权重 → 4096个温度值
-```
-
-### 物理约束的作用
-
-物理约束（∇²T = -Q/k）使得：
-
-- 降低学习难度：网络不需学习任意映射，只需学符合物理的映射
-- 提供训练目标：样本都满足热传导方程
-- 保证泛化能力：学到的是规律，不是记忆
-
-**结论**：4 个参数能预测 4096 个值，因为模型通过训练在 18M 权重中学到并存储了物理规律。
+![Prediction Comparison](./outputs/prediction_vs_truth.png)
 
 ---
 
-## 🏗️ 代码架构
+## 🔬 Core Principle: How Can 4 Parameters Predict 4096 Numbers?
 
-### 1. 数据生成：物理模拟器
+### The True Source of Information: Model Weights
+
+```
+Input: 4 design parameters
+Model: 18,138,625 neural network parameters ← Information stored here!
+Output: 64×64 = 4096 temperature values
+
+Real information flow = 4 inputs + 18M learned weights → 4096 outputs
+```
+
+**Core Understanding**: The extra information doesn't come from nowhere—it's **learned during training and compressed into the model weights**.
+
+### Training Phase: Learning Physical Laws
+
+```
+400 training samples (4 params → 4096 temperature values)
+        ↓
+   Backpropagation optimization
+        ↓
+18M weights encode:
+  • Heat equation ∇²T = -Q/k solution patterns
+  • How boundary conditions affect temperature distribution
+  • Spatial heat propagation patterns
+  • Parameter-to-field mapping relationships
+```
+
+### Inference Phase: Applying Learned Patterns
+
+```
+4 new parameters → Through 18M learned weights → 4096 temperature values
+```
+
+### Analogy: JPEG Decoder
+
+```
+JPEG Decoder:
+  Input: Compressed file (KB-level)
+  Decoder: Fixed algorithm (contains image reconstruction rules)
+  Output: Complete image (MB-level)
+
+FNO Model:
+  Input: 4 design parameters
+  Model: 18M weights (learned PDE solution patterns)
+  Output: 4096 temperature values
+```
+
+### Role of Physical Constraints
+
+Physical constraints (∇²T = -Q/k) enable:
+
+- **Reduced learning difficulty**: Network only learns physics-compliant mappings, not arbitrary ones
+- **Training objectives**: All samples satisfy the heat conduction equation
+- **Generalization**: Learning patterns, not memorizing data
+
+**Conclusion**: 4 parameters can predict 4096 values because the model learns and stores physical laws in 18M weights through training.
+
+---
+
+## 🏗️ Code Architecture
+
+### 1. Data Generation: Physics Simulator
 
 ```python
 def simulate_steady_heat(params, grid_size):
     """
-    简化的稳态热传导模拟
+    Simplified steady-state heat conduction simulation
 
-    输入: [fin_height, fin_spacing, thermal_cond, heat_power]
-    输出: 64×64 温度场
+    Input: [fin_height, fin_spacing, thermal_cond, heat_power]
+    Output: 64×64 temperature field
     """
-    # 1. 创建空间网格
+    # 1. Create spatial grid
     x = np.linspace(0, 50, grid_size)  # 50mm × 50mm
     y = np.linspace(0, 50, grid_size)
     X, Y = np.meshgrid(x, y)
 
-    # 2. 高斯热源（模拟芯片发热）
+    # 2. Gaussian heat source (simulating chip heating)
     r = np.sqrt((X - 25)**2 + (Y - 25)**2)
     T_base = heat_power * np.exp(-r**2 / (2 * 5**2))
 
-    # 3. 散热效率（取决于设计参数）
+    # 3. Cooling efficiency (depends on design parameters)
     cooling_efficiency = (fin_height/30) * (thermal_cond/400) * (8/fin_spacing)
 
-    # 4. 最终温度场
+    # 4. Final temperature field
     T_field = 25 + T_base * (1 - 0.7 * cooling_efficiency)
 
     return T_field
 ```
 
-**物理意义**：
+**Physical Meaning**:
 
-- 热源在中心产生高温
-- 散热片通过导热将热量传递到边界
-- 更高的散热片、更大的导热率、更小的间距 → 更好的散热
+- Heat source generates high temperature at center
+- Heatsink transfers heat to boundaries via conduction
+- Higher fins, larger thermal conductivity, smaller spacing → Better cooling
 
-### 2. FNO 模型：频域学习
+### 2. FNO Model: Frequency Domain Learning
 
 ```python
 class TrueFNO(nn.Module):
     """
-    傅里叶神经算子
+    Fourier Neural Operator
 
-    核心思想：
-    1. 参数编码器：4维 → 32×64×64 特征场
-    2. 频域卷积：学习全局依赖关系
-    3. 场解码器：特征场 → 温度场
+    Core Concept:
+    1. Parameter encoder: 4D → 32×64×64 feature field
+    2. Spectral convolution: Learn global dependencies
+    3. Field decoder: Feature field → Temperature field
     """
 
     def __init__(self, param_dim=4, grid_size=64, width=32, modes=12):
-        # 1. 参数 → 场的投影
+        # 1. Parameter → Field projection
         self.param_encoder = nn.Sequential(
             nn.Linear(4, 64),
             nn.GELU(),
             nn.Linear(64, 128),
             nn.GELU(),
-            nn.Linear(128, 32*64*64)  # 展开成初始场
+            nn.Linear(128, 32*64*64)  # Expand to initial field
         )
 
-        # 2. 4层频域卷积（学习物理演化）
+        # 2. 4-layer spectral convolution (learn physical evolution)
         self.spectral_conv1 = SpectralConv2d(width, width, modes)
         self.spectral_conv2 = SpectralConv2d(width, width, modes)
         self.spectral_conv3 = SpectralConv2d(width, width, modes)
         self.spectral_conv4 = SpectralConv2d(width, width, modes)
 
-        # 3. 场 → 温度的解码
+        # 3. Field → Temperature decoder
         self.decoder = nn.Sequential(
             nn.Conv2d(32, 64, 3, padding=1),
             nn.GELU(),
             nn.Conv2d(64, 32, 3, padding=1),
             nn.GELU(),
-            nn.Conv2d(32, 1, 1)  # 输出温度场
+            nn.Conv2d(32, 1, 1)  # Output temperature field
         )
 ```
 
-**关键设计**：
+**Key Design**:
 
-- 频域卷积：捕捉温度场的长程依赖（热传导的全局性）
-- 残差连接：保持信息流动
-- 多尺度特征：学习不同尺度的热传导模式
+- Spectral convolution: Captures long-range dependencies in temperature field (global nature of heat conduction)
+- Residual connections: Maintain information flow
+- Multi-scale features: Learn heat conduction patterns at different scales
 
-### 3. 频域卷积：核心算法
+### 3. Spectral Convolution: Core Algorithm
 
 ```python
 class SpectralConv2d(nn.Module):
     """
-    频域卷积：FNO的核心
+    Spectral Convolution: Core of FNO
 
-    原理：傅里叶变换将卷积变成乘法
-    空间域: y = conv(x, kernel)  → O(N²)
-    频域:   Y = FFT(x) * W       → O(N log N)
+    Principle: Fourier transform converts convolution to multiplication
+    Spatial domain: y = conv(x, kernel)  → O(N²)
+    Frequency domain: Y = FFT(x) * W     → O(N log N)
     """
 
     def forward(self, x):
-        # 1. FFT到频域
+        # 1. FFT to frequency domain
         x_ft = torch.fft.rfft2(x, norm='ortho')
 
-        # 2. 频域乘法（低频modes）
+        # 2. Frequency domain multiplication (low-frequency modes)
         out_ft[:, :, :modes, :modes] = einsum(
             "bixy,ioxy->boxy",
             x_ft[:, :, :modes, :modes],
             self.weights
         )
 
-        # 3. IFFT回空间域
+        # 3. IFFT back to spatial domain
         x = torch.fft.irfft2(out_ft, norm='ortho')
 
         return x
 ```
 
-**优势**：
+**Advantages**:
 
-- 全局感受野：一次操作看到整个场
-- 分辨率无关：可以迁移到不同网格
-- GPU 加速：FFT 在 GPU 上极快
+- Global receptive field: One operation sees the entire field
+- Resolution-independent: Can transfer to different grids
+- GPU acceleration: FFT is extremely fast on GPU
 
 ---
 
-## 🚀 使用方法
+## 🚀 Usage
 
-### 环境要求
+### Requirements
 
 ```bash
-# 硬件
-- NVIDIA GPU (推荐4GB+显存)
+# Hardware
+- NVIDIA GPU (4GB+ VRAM recommended)
 - CUDA 11.0+
 
-# 软件
+# Software
 - Python 3.8+
 - PyTorch 2.0+ (with CUDA)
 - NumPy
 - Matplotlib
 ```
 
-### 安装依赖
+### Installation
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install numpy matplotlib
 ```
 
-### 运行代码
+### Running the Code
 
 ```bash
-# 完整流程
-python 06-enginering-opt-gpu.py
+# Complete workflow
+python src/heatsink-optimization-fno.py
 
-# 输出目录
+# Output directory
 ./outputs/
-  ├── prediction_vs_truth.png         # 预测精度验证
-  └── heatsink_optimization_gpu.png   # 设计优化结果
+  ├── prediction_vs_truth.png         # Prediction accuracy validation
+  └── heatsink_optimization_gpu.png   # Design optimization results
 ```
 
 ---
 
-## 📊 实验结果
+## 📊 Experimental Results
 
-### 训练性能
+### Training Performance
 
-| 指标         | 数值           |
-| ------------ | -------------- |
-| 训练样本     | 400 个设计     |
-| 测试样本     | 100 个设计     |
-| 训练轮数     | 500 epochs     |
-| 训练时间     | ~13 分钟 (GPU) |
-| 平均误差     | 0.086°C       |
-| 最高温度误差 | 0.322°C       |
+| Metric                | Value         |
+| --------------------- | ------------- |
+| Training Samples      | 400 designs   |
+| Test Samples          | 100 designs   |
+| Training Epochs       | 500           |
+| Training Time         | ~13 min (GPU) |
+| Average Error         | 0.086°C       |
+| Max Temperature Error | 0.322°C       |
 
-**收敛曲线**：
+**Convergence Curve**:
 
 ```
 Epoch  20 | Loss: 655.47 | Max Temp Error: 23.43°C
@@ -246,267 +264,265 @@ Epoch 200 | Loss: 0.21   | Max Temp Error: 0.46°C
 Epoch 500 | Loss: 0.13   | Max Temp Error: 0.25°C
 ```
 
-### 设计优化结果
+### Design Optimization Results
 
-**问题设定**：
+**Problem Setup**:
 
-- 目标：最小化最高温度
-- 约束：散热片高度 10-30mm，间距 2-8mm，材料导热率 100-400 W/m·K
-- 搜索空间：10000 个候选设计
+- **Objective**: Minimize maximum temperature
+- **Constraints**: Fin height 10-30mm, spacing 2-8mm, thermal conductivity 100-400 W/m·K
+- **Search Space**: 10,000 candidate designs
 
-**最优设计**：
+**Optimal Design**:
 
 ```
-散热片高度：20.4 mm
-散热片间距：2.0 mm  (最小值，增加散热面积)
-材料导热率：184 W/m·K
-最高温度：54.0°C
+Fin Height:       20.4 mm
+Fin Spacing:      2.0 mm  (minimum value, maximizes cooling area)
+Thermal Cond.:    184 W/m·K
+Max Temperature:  54.0°C
 ```
 
-**性能对比**：
+**Performance Comparison**:
 
-| 方法         | 时间      | 加速比                |
-| ------------ | --------- | --------------------- |
-| 传统 CFD     | 1666.7 天 | 1×                   |
-| GPU 神经算子 | 29.1 秒   | **4,950,884×** |
+| Method              | Time        | Speedup        |
+| ------------------- | ----------- | -------------- |
+| Traditional CFD     | 1666.7 days | 1×             |
+| GPU Neural Operator | 29.1 sec    | **4,950,884×** |
 
 ---
 
-## 🎯 技术亮点
+## 🎯 Technical Highlights
 
-### 1. GPU 优化策略
+### 1. GPU Optimization Strategy
 
 ```python
-# ✓ 自动检测GPU
+# ✓ Automatic GPU detection
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-# ✓ 混合精度训练 (FP16)
+# ✓ Mixed precision training (FP16)
 scaler = torch.amp.GradScaler('cuda')
 with torch.amp.autocast('cuda'):
     pred = model(params)
     loss = criterion(pred, target)
 
-# ✓ CUDA优化设置
+# ✓ CUDA optimization settings
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
-# ✓ 批处理评估
+# ✓ Batch processing
 batch_size = 1000
 for i in range(0, 10000, batch_size):
     batch_temps = model(params[i:i+batch_size])
 ```
 
-**加速效果**：
+**Acceleration Effects**:
 
-- FFT 运算：GPU 比 CPU 快 **10-100 倍**
-- 混合精度：速度提升 **2-3 倍**
-- 批处理：吞吐量提升 **5-10 倍**
+- FFT Operations: GPU is **10-100× faster** than CPU
+- Mixed Precision: **2-3× speedup**
+- Batch Processing: **5-10× throughput improvement**
 
-### 2. 物理引导学习
+### 2. Physics-Guided Learning
 
 ```python
-# 损失函数：不仅拟合数据，还要满足物理规律
+# Loss function: Not only fit data, but also satisfy physical laws
 def physics_loss(pred_temp, true_temp, params):
-    # 1. 数据拟合项
+    # 1. Data fitting term
     data_loss = F.mse_loss(pred_temp, true_temp)
 
-    # 2. 物理约束项（可选）
-    # - 能量守恒
-    # - 温度梯度连续性
-    # - 边界条件满足
+    # 2. Physics constraint term (optional)
+    # - Energy conservation
+    # - Temperature gradient continuity
+    # - Boundary condition satisfaction
 
     return data_loss + λ * physics_loss
 ```
 
 ---
 
-## 📐 物理原理补充
+## 📐 Physics Background
 
-### 热传导方程
+### Heat Conduction Equation
 
-稳态热传导（无时间项）：
+Steady-state heat conduction (no time term):
 
 ```
 ∇·(k∇T) + Q = 0
 
-其中：
-  k = 材料导热率 [W/m·K]
-  T = 温度场 [°C]
-  Q = 热源项 [W/m³]
+Where:
+  k = Thermal conductivity [W/m·K]
+  T = Temperature field [°C]
+  Q = Heat source term [W/m³]
 ```
 
-### 边界条件
+### Boundary Conditions
 
 ```
-1. 热源中心：Q = heat_power (集中热源)
-2. 散热片区域：q = h(T - T_ambient)  (对流散热)
-3. 边界：T = T_ambient = 25°C
+1. Heat source center: Q = heat_power (concentrated source)
+2. Heatsink region: q = h(T - T_ambient)  (convective cooling)
+3. Boundary: T = T_ambient = 25°C
 ```
 
-### 散热效率
+### Cooling Efficiency
 
 ```python
 cooling_efficiency = (fin_height/30) * (thermal_cond/400) * (8/fin_spacing)
 ```
 
-**物理解释**：
+**Physical Interpretation**:
 
-- `fin_height` ↑：增大散热面积
-- `thermal_cond` ↑：加快热传导
-- `fin_spacing` ↓：增加散热片数量
+- `fin_height` ↑: Increases cooling surface area
+- `thermal_cond` ↑: Accelerates heat conduction
+- `fin_spacing` ↓: Increases number of fins
 
 ---
 
-## 🔧 扩展应用
+## 🔧 Extended Applications
 
-### 1. 多物理场耦合
+### 1. Multi-Physics Coupling
 
 ```python
-# 热-流-固耦合
-输入: [几何参数, 材料参数, 流体参数]
-输出: [温度场, 速度场, 应力场]
+# Thermal-Fluid-Structure Coupling
+Input: [geometric params, material params, fluid params]
+Output: [temperature field, velocity field, stress field]
 ```
 
-### 2. 多目标优化
+### 2. Multi-Objective Optimization
 
 ```python
-# 同时优化多个指标
+# Optimize multiple metrics simultaneously
 objectives = {
-    'max_temp': minimize,      # 最低温度
-    'weight': minimize,         # 最轻重量
-    'cost': minimize,           # 最低成本
-    'volume': constraint        # 体积约束
+    'max_temp': minimize,      # Minimize temperature
+    'weight': minimize,         # Minimize weight
+    'cost': minimize,           # Minimize cost
+    'volume': constraint        # Volume constraint
 }
 ```
 
-### 3. 不确定性量化
+### 3. Uncertainty Quantification
 
 ```python
-# 考虑参数不确定性
-输入: 参数分布 (均值 + 标准差)
-输出: 温度场分布 (预测 + 置信区间)
+# Consider parameter uncertainty
+Input: Parameter distribution (mean + std)
+Output: Temperature field distribution (prediction + confidence interval)
 ```
 
 ---
 
-## 📚 参考文献
+## 📚 References
 
-1. **FNO 原论文**:Li, Z., et al. (2021). "Fourier Neural Operator for Parametric Partial Differential Equations."_ICLR 2021_. [arXiv:2010.08895](https://arxiv.org/abs/2010.08895)
-2. **神经算子综述**:Kovachki, N., et al. (2023). "Neural Operator: Learning Maps Between Function Spaces."_Journal of Machine Learning Research_.
-3. **工程应用案例**:
-   Wen, G., et al. (2022). "U-FNO: An Enhanced Fourier Neural Operator for Multiphase Flow."
-   _Physical Review E_.
+1. **FNO Original Paper**: Li, Z., et al. (2021). "Fourier Neural Operator for Parametric Partial Differential Equations." _ICLR 2021_. [arXiv:2010.08895](https://arxiv.org/abs/2010.08895)
+2. **Neural Operator Survey**: Kovachki, N., et al. (2023). "Neural Operator: Learning Maps Between Function Spaces." _Journal of Machine Learning Research_.
+3. **Engineering Applications**: Wen, G., et al. (2022). "U-FNO: An Enhanced Fourier Neural Operator for Multiphase Flow." _Physical Review E_.
 
 ---
 
-## 🤝 贡献与反馈
+## 🤝 Contributing
 
-### 联系方式
+### Contact
 
-- GitHub Issues: 欢迎提出问题和建议
-- Pull Requests: 欢迎贡献代码改进
+- GitHub Issues: Welcome to raise questions and suggestions
+- Pull Requests: Welcome to contribute code improvements
 
-### 待改进方向
+### Future Improvements
 
-- [ ] 加入真实 CFD 数据训练
-- [ ] 实现 3D 散热器优化
-- [ ] 添加不确定性量化
-- [ ] 支持自定义几何形状
-- [ ] 开发交互式 Web 界面
+- [ ] Train with real CFD data
+- [ ] Implement 3D heatsink optimization
+- [ ] Add uncertainty quantification
+- [ ] Support custom geometric shapes
+- [ ] Develop interactive web interface
 
 ---
 
-## 📜 许可证
+## 📜 License
 
 MIT License
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-感谢以下开源项目：
+Thanks to the following open-source projects:
 
-- PyTorch 团队的深度学习框架
-- FNO 原作者的开创性工作
-- NVIDIA 的 CUDA 加速技术
+- PyTorch team for the deep learning framework
+- FNO authors for their pioneering work
+- NVIDIA for CUDA acceleration technology
 
 ---
 
-## 附录 A：完整代码结构
+## Appendix A: Complete Code Structure
 
 ```
-├── GPU设备设置
+├── GPU Device Setup
 │   └── setup_device()
-├── 数据生成
+├── Data Generation
 │   ├── generate_heatsink_data()
 │   └── simulate_steady_heat()
-├── FNO模型
-│   ├── SpectralConv2d (频域卷积)
-│   └── TrueFNO (完整模型)
-├── 训练
+├── FNO Model
+│   ├── SpectralConv2d (Spectral Convolution)
+│   └── TrueFNO (Complete Model)
+├── Training
 │   └── train_design_model_gpu()
-├── 优化
+├── Optimization
 │   └── design_optimization_demo_gpu()
-└── 可视化
+└── Visualization
     ├── visualize_predictions_vs_truth()
     └── visualize_design_results()
 ```
 
 ---
 
-## 附录 B：关键超参数
+## Appendix B: Key Hyperparameters
 
-| 参数              | 值    | 说明           |
-| ----------------- | ----- | -------------- |
-| `grid_size`     | 64    | 空间网格分辨率 |
-| `width`         | 32    | FNO 通道数     |
-| `modes`         | 12    | 频域模态数     |
-| `batch_size`    | 32    | 训练批大小     |
-| `learning_rate` | 0.001 | 初始学习率     |
-| `epochs`        | 500   | 训练轮数       |
-| `n_train`       | 400   | 训练样本数     |
+| Parameter       | Value | Description                |
+| --------------- | ----- | -------------------------- |
+| `grid_size`     | 64    | Spatial grid resolution    |
+| `width`         | 32    | FNO channel width          |
+| `modes`         | 12    | Frequency domain modes     |
+| `batch_size`    | 32    | Training batch size        |
+| `learning_rate` | 0.001 | Initial learning rate      |
+| `epochs`        | 500   | Training epochs            |
+| `n_train`       | 400   | Number of training samples |
 
-**调参建议**：
+**Tuning Tips**:
 
-- `modes` ↑：精度提升，但速度变慢
-- `width` ↑：表达能力增强，但内存消耗增大
-- `batch_size` ↑：训练稳定，但需要更大显存
-
----
-
-## 附录 C：常见问题
-
-### Q1: 为什么训练初期误差很大？
-
-**A**: 神经网络需要从随机初始化学习物理规律，前期会有较大误差。通常在 100-200 epochs 后会快速收敛。
-
-### Q2: 如何提高预测精度？
-
-**A**:
-
-1. 增加训练样本（400 → 1000+）
-2. 增加 FNO 层数（4 → 6）
-3. 调大 modes（12 → 20）
-4. 使用真实 CFD 数据
-
-### Q3: GPU 显存不足怎么办？
-
-**A**:
-
-1. 减小 `batch_size`（32 → 16）
-2. 减小 `width`（32 → 24）
-3. 关闭混合精度训练
-
-### Q4: 能否用于其他物理场？
-
-**A**: 完全可以！只需修改：
-
-1. `simulate_steady_heat()` → 你的物理模拟器
-2. 调整输入参数维度
-3. 调整输出场维度
+- `modes` ↑: Better accuracy, but slower speed
+- `width` ↑: Enhanced expressiveness, but higher memory consumption
+- `batch_size` ↑: More stable training, but requires more VRAM
 
 ---
 
-**最后更新**: 2025 年 11 月 5 日
-**版本**: v1.0
-**作者**: dingtiexin
+## Appendix C: FAQ
+
+### Q1: Why is the error large in early training?
+
+**A**: Neural networks need to learn physical laws from random initialization, leading to large early errors. Typically converges quickly after 100-200 epochs.
+
+### Q2: How to improve prediction accuracy?
+
+**A**:
+
+1. Increase training samples (400 → 1000+)
+2. Increase FNO layers (4 → 6)
+3. Increase modes (12 → 20)
+4. Use real CFD data
+
+### Q3: What if GPU memory is insufficient?
+
+**A**:
+
+1. Reduce `batch_size` (32 → 16)
+2. Reduce `width` (32 → 24)
+3. Disable mixed precision training
+
+### Q4: Can it be used for other physical fields?
+
+**A**: Absolutely! Just modify:
+
+1. `simulate_steady_heat()` → Your physics simulator
+2. Adjust input parameter dimensions
+3. Adjust output field dimensions
+
+---
+
+**Last Updated**: November 5, 2025  
+**Version**: v1.0  
+**Author**: dingtiexin
